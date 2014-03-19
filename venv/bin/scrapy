@@ -1,0 +1,4 @@
+#!/Users/esben/Code/moodle-scraper/venv/bin/python
+
+from scrapy.cmdline import execute
+execute()
