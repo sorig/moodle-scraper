@@ -5,7 +5,7 @@
 
 from scrapy.item import Item, Field
 
-class ScraperItem(Item):
-    # define the fields for your item here like:
-    # name = Field()
-    pass
+class MoodleResource(Item):
+    type = Field()
+    link = Field()
+    title = Field()
