@@ -5,6 +5,8 @@ from scrapy.http import FormRequest
 from scrapy import log
 import getpass
 import sys
+from os.path import basename
+from urlparse import urlparse
 
 class MoodleSpider(Spider):
     name = "moodle"
@@ -12,9 +14,10 @@ class MoodleSpider(Spider):
     start_urls = [
         "https://moodle.ucl.ac.uk/login/index.php"
     ]
+    resource_path = "resources/"
 
     def parse(self, response):
-        print "Please input your login credentials."
+        print "Please input your moodle login credentials."
         sys.stdout.write('Username: ')
         user = raw_input()
         password = getpass.getpass()
@@ -32,18 +35,25 @@ class MoodleSpider(Spider):
             sel = Selector(response)
             courselinks = sel.xpath('//div[@class="content"]/ul/li/div/a/@href')
             for link in courselinks:
-                log.msg("Link: " + str(link.extract()))
+                log.msg("Module link: " + str(link.extract()))
+                yield Request(url=link.extract(), callback=self.parse_modulepage)
 
-    def parse_myhome(self, response):
-        """ Scrape useful stuff from page, and spawn new requests
+    def parse_modulepage(self, response):
+        sel = Selector(response)
+        log.msg("Parsing module page" + str(sel.xpath('//div[@id="ucl-sitename"]/text()').extract()))
+        resources = sel.xpath('//li[@class="activity resource modtype_resource"]/div/div/a/@href')
+        
+        for resource in resources:
+            log.msg("Downloading " + str(resource.extract()))
+            yield Request(resource.extract(), callback=self.save_file)
 
-        """
-        hxs = HtmlXPathSelector(response)
-        images = hxs.select('//img')
-        # .. do something with them
-        links = hxs.select('//a/@href')
-        for link in links:
-            log.msg("Link: " + str(link))
-        # Yield a new request for each link we found
-        #for link in links:
-        #    yield Request(url=link, callback=self.parse_page)
+    def save_file(self, response):
+        path = self.get_resource_path(response.url)
+        log.msg("Saving file: " + path)
+        with open(path, "wb") as f:
+            f.write(response.body)
+
+    def get_resource_path(self, url):
+        filepath = urlparse(url).path
+        filename = basename(filepath)
+        return self.resource_path + filename
