@@ -5,7 +5,8 @@ from scrapy.http import FormRequest
 from scrapy import log
 import getpass
 import sys
-from os.path import basename
+from os.path import basename, join, exists, dirname
+from os import makedirs
 from urlparse import urlparse
 
 class MoodleSpider(Spider):
@@ -14,7 +15,7 @@ class MoodleSpider(Spider):
     start_urls = [
         "https://moodle.ucl.ac.uk/login/index.php"
     ]
-    resource_path = "resources/"
+    resource_path = "resources"
 
     def parse(self, response):
         print "Please input your moodle login credentials."
@@ -33,10 +34,17 @@ class MoodleSpider(Spider):
         # Logged in, crawl moodle home page
         else:
             sel = Selector(response)
-            courselinks = sel.xpath('//div[@class="content"]/ul/li/div/a/@href')
+            courselinks = sel.xpath('//div[@class="content"]/ul/li/div/a')
+
             for link in courselinks:
-                log.msg("Module link: " + str(link.extract()))
-                yield Request(url=link.extract(), callback=self.parse_modulepage)
+                url = link.xpath('@href').extract()[0]
+
+                request = Request(url=url, callback=self.parse_modulepage)
+                # Pass on module name
+                request.meta['moduleName'] = link.xpath('text()').extract()[0]
+
+                log.msg("Module " + request.meta['moduleName'] + " link: " + url)
+                yield request
 
     def parse_modulepage(self, response):
         sel = Selector(response)
@@ -45,15 +53,22 @@ class MoodleSpider(Spider):
         
         for resource in resources:
             log.msg("Downloading " + str(resource.extract()))
-            yield Request(resource.extract(), callback=self.save_file)
+            request = Request(resource.extract(), callback=self.save_file)
+            request.meta['moduleName'] = response.meta['moduleName']
+            yield request
 
     def save_file(self, response):
-        path = self.get_resource_path(response.url)
+        path = self.get_resource_path(response.url, response.meta['moduleName'])
         log.msg("Saving file: " + path)
+
+        if not exists(dirname(path)):
+            makedirs(dirname(path))
+
         with open(path, "wb") as f:
             f.write(response.body)
 
-    def get_resource_path(self, url):
+    def get_resource_path(self, url, moduleName):
         filepath = urlparse(url).path
-        filename = basename(filepath)
-        return self.resource_path + filename
+        fileName = basename(filepath)
+        moduleName = moduleName.replace(":", "-").replace("/", ":")
+        return join(self.resource_path, moduleName, fileName)
