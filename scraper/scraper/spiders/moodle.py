@@ -48,17 +48,35 @@ class MoodleSpider(Spider):
 
     def parse_modulepage(self, response):
         sel = Selector(response)
-        log.msg("Parsing module page" + str(sel.xpath('//div[@id="ucl-sitename"]/text()').extract()))
-        resources = sel.xpath('//li[@class="activity resource modtype_resource"]/div/div/a/@href')
-        
-        for resource in resources:
-            log.msg("Downloading " + str(resource.extract()))
-            request = Request(resource.extract(), callback=self.save_file)
-            request.meta['moduleName'] = response.meta['moduleName']
-            yield request
+        log.msg("Parsing module page: " + response.meta['moduleName'])
+
+        sections = sel.xpath('//li[@class="section main clearfix"]')
+
+        for section in sections:
+            sectionName = section.xpath('.//h3[@class="sectionname"]/text()').extract()
+            if len(sectionName) > 0:
+                sectionName = sectionName[0]
+                log.msg("Section: " + sectionName)
+            else:
+                sectionName = ""
+
+            resources = section.xpath('.//li[@class="activity resource modtype_resource"]/div/div/a/@href')
+            for resource in resources:
+                yield self.request_resource(resource.extract(), response.meta['moduleName'], sectionName)
+
+            links = section.xpath('.//li[@class="activity url modtype_url"]/div/div/a/@href')
+            for link in links:
+                yield self.request_resource(link.extract()+"&redirect=1", response.meta['moduleName'], sectionName)
+
+    def request_resource(self, url, moduleName, sectionName):
+        log.msg("Downloading " + url)
+        request = Request(url, callback=self.save_file)
+        request.meta['moduleName'] = moduleName
+        request.meta['sectionName'] = sectionName
+        return request
 
     def save_file(self, response):
-        path = self.get_resource_path(response.url, response.meta['moduleName'])
+        path = self.get_resource_path(response.url, response.meta['moduleName'], response.meta['sectionName'])
         log.msg("Saving file: " + path)
 
         if not exists(dirname(path)):
@@ -67,8 +85,17 @@ class MoodleSpider(Spider):
         with open(path, "wb") as f:
             f.write(response.body)
 
-    def get_resource_path(self, url, moduleName):
+    def get_resource_path(self, url, moduleName, sectionName):
         filepath = urlparse(url).path
         fileName = basename(filepath)
-        moduleName = moduleName.replace(":", "-").replace("/", ":")
-        return join(self.resource_path, moduleName, fileName)
+
+        # Stupid heuristic. If incoming url ends with slash then it must be a website
+        if fileName == "":
+            fileName = "index.html"
+
+        moduleName = self.path_encode(moduleName)
+        sectionName = self.path_encode(sectionName)
+        return join(self.resource_path, moduleName, sectionName, fileName)
+
+    def path_encode(self, str):
+        return str.replace(":", "-").replace("/", ":")
