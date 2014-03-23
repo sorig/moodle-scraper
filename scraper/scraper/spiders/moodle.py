@@ -7,7 +7,7 @@ import getpass
 import sys
 from os.path import basename, join, exists, dirname
 from os import makedirs
-from urlparse import urlparse
+from urlparse import urlparse, parse_qs
 
 class MoodleSpider(Spider):
     name = "moodle"
@@ -38,35 +38,33 @@ class MoodleSpider(Spider):
 
             for link in courselinks:
                 url = link.xpath('@href').extract()[0]
+                query = parse_qs(urlparse(url).query)
+                if "id" in query:
+                    moduleId = query["id"][0]
+                    resourceUrl = "https://moodle.ucl.ac.uk/course/resources.php?id=" + moduleId
 
-                request = Request(url=url, callback=self.parse_modulepage)
-                # Pass on module name
-                request.meta['moduleName'] = link.xpath('text()').extract()[0]
+                    request = Request(url=resourceUrl, callback=self.parse_resourcepage)
 
-                log.msg("Module " + request.meta['moduleName'] + " link: " + url)
-                yield request
+                    # Pass on module name
+                    request.meta['moduleName'] = link.xpath('text()').extract()[0]
 
-    def parse_modulepage(self, response):
+                    log.msg("Module " + request.meta['moduleName'] + " link: " + resourceUrl)
+                    yield request
+
+    def parse_resourcepage(self, response):
         sel = Selector(response)
-        log.msg("Parsing module page: " + response.meta['moduleName'])
+        tablerows = sel.xpath('//table[@class="generaltable mod_index"]/tbody/tr')
+        sectionName = "Top section"
 
-        sections = sel.xpath('//li[@class="section main clearfix"]')
+        for row in tablerows:
+            currentSectionName = row.xpath('.//td[@class="cell c0"]/text()').extract()
+            if len(currentSectionName) > 0:
+                sectionName = currentSectionName[0]
 
-        for section in sections:
-            sectionName = section.xpath('.//h3[@class="sectionname"]/text()').extract()
-            if len(sectionName) > 0:
-                sectionName = sectionName[0]
-                log.msg("Section: " + sectionName)
-            else:
-                sectionName = ""
-
-            resources = section.xpath('.//li[@class="activity resource modtype_resource"]/div/div/a/@href')
-            links = section.xpath('.//li[@class="activity url modtype_url"]/div/div/a/@href')
-            for selector in [resources, links]:
-                for resource in selector:
-                    # make sure we get redirected to the content
-                    url = resource.extract()+"&redirect=1"
-                    yield self.request_resource(url, response.meta['moduleName'], sectionName)   
+            link = row.xpath('.//a/@href').extract()
+            if len(link) > 0:
+                url = link[0]+"&redirect=1"
+                yield self.request_resource(url, response.meta['moduleName'], sectionName)
 
     def request_resource(self, url, moduleName, sectionName):
         log.msg("Downloading " + url)
@@ -90,7 +88,7 @@ class MoodleSpider(Spider):
         fileName = basename(filepath)
 
         # Stupid heuristic. If incoming url ends with slash then it must be a website
-        if fileName == "":
+        if fileName == "" or not "." in fileName:
             fileName = "index.html"
 
         moduleName = self.path_encode(moduleName)
