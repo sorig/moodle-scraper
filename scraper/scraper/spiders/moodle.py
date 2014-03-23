@@ -61,12 +61,12 @@ class MoodleSpider(Spider):
                 sectionName = ""
 
             resources = section.xpath('.//li[@class="activity resource modtype_resource"]/div/div/a/@href')
-            for resource in resources:
-                yield self.request_resource(resource.extract(), response.meta['moduleName'], sectionName)
-
             links = section.xpath('.//li[@class="activity url modtype_url"]/div/div/a/@href')
-            for link in links:
-                yield self.request_resource(link.extract()+"&redirect=1", response.meta['moduleName'], sectionName)
+            for selector in [resources, links]:
+                for resource in selector:
+                    # make sure we get redirected to the content
+                    url = resource.extract()+"&redirect=1"
+                    yield self.request_resource(url, response.meta['moduleName'], sectionName)   
 
     def request_resource(self, url, moduleName, sectionName):
         log.msg("Downloading " + url)
