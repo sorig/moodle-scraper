@@ -8,6 +8,7 @@ import sys
 from os.path import basename, join, exists, dirname
 from os import makedirs
 from urlparse import urlparse, parse_qs
+from urllib import unquote
 
 class MoodleSpider(Spider):
     name = "moodle"
@@ -86,6 +87,7 @@ class MoodleSpider(Spider):
     def get_resource_path(self, url, moduleName, sectionName):
         filepath = urlparse(url).path
         fileName = basename(filepath)
+        fileName = unquote(fileName).decode('utf8') 
 
         # Stupid heuristic. If incoming url ends with slash then it must be a website
         if fileName == "" or not "." in fileName:
